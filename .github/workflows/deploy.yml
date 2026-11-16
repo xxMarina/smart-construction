@@ -18,7 +18,7 @@ env:
 jobs:
   build-and-push:
     name: 1. Build & Push Docker
-    needs: terraform
+    needs: terraform-apply
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
@@ -64,7 +64,6 @@ jobs:
 
   terraform-apply:
     name: 2. Terraform Apply
-    needs: build-and-push
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
@@ -159,7 +158,7 @@ jobs:
 
   ansible-app:
     name: 4. Ansible App
-    needs: ansible-db
+    needs: [ansible-db, build-and-push]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
