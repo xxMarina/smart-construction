@@ -5,6 +5,10 @@ on:
     branches:
       - main
       - develop
+  pull_request:
+    branches:
+      - main
+      - develop
   workflow_dispatch:
 
 permissions:
@@ -25,27 +29,37 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Autenticar na GCP via OIDC
+        if: github.event_name != 'pull_request'
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Configurar Docker no Artifact Registry
+        if: github.event_name != 'pull_request'
         run: gcloud auth configure-docker southamerica-east1-docker.pkg.dev --quiet
 
-      - name: Build e Push da imagem Web (Next.js)
+      - name: Build da imagem Web (Next.js)
         run: |
           docker build --target runner \
             -t "${{ env.REGISTRY }}/web:${{ github.sha }}" \
             -t "${{ env.REGISTRY }}/web:latest" .
+
+      - name: Push da imagem Web (Next.js)
+        if: github.event_name != 'pull_request'
+        run: |
           docker push "${{ env.REGISTRY }}/web:${{ github.sha }}"
           docker push "${{ env.REGISTRY }}/web:latest"
 
-      - name: Build e Push da imagem API (FastAPI)
+      - name: Build da imagem API (FastAPI)
         run: |
           docker build --target runtime \
             -t "${{ env.REGISTRY }}/api:${{ github.sha }}" \
             -t "${{ env.REGISTRY }}/api:latest" ./backend
+
+      - name: Push da imagem API (FastAPI)
+        if: github.event_name != 'pull_request'
+        run: |
           docker push "${{ env.REGISTRY }}/api:${{ github.sha }}"
           docker push "${{ env.REGISTRY }}/api:latest"
 
@@ -58,12 +72,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Autenticar na GCP via OIDC
+        if: github.event_name != 'pull_request'
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Configurar Google Cloud SDK
+        if: github.event_name != 'pull_request'
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Instalar Terraform
@@ -71,7 +87,14 @@ jobs:
         with:
           terraform_version: 1.9.8
 
+      - name: Validar Terraform
+        working-directory: terraform
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
       - name: Terraform Init & Apply
+        if: github.event_name != 'pull_request'
         working-directory: terraform
         run: |
           terraform init -input=false
@@ -82,7 +105,14 @@ jobs:
           pip install --quiet ansible google-auth requests
           ansible-galaxy collection install google.cloud community.docker community.general ansible.posix
 
+      - name: Validar sintaxe dos Playbooks Ansible
+        working-directory: ansible
+        run: |
+          ansible-playbook --syntax-check playbook-db.yml
+          ansible-playbook --syntax-check playbook-app.yml
+
       - name: Executar Playbooks Ansible (Banco e Aplicação)
+        if: github.event_name != 'pull_request'
         working-directory: ansible
         env:
           GCP_AUTH_KIND: application
