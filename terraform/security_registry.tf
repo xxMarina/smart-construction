@@ -3,6 +3,14 @@ data "google_service_account" "app_sa" {
   account_id = "smart-construction-app-sa"
 }
 
+removed {
+  from = google_service_account.app_sa
+
+  lifecycle {
+    destroy = false
+  }
+}
+
 # --- ARTIFACT REGISTRY (Armazena imagens web, api e gateway) ---
 resource "google_artifact_registry_repository" "docker_repo" {
   location      = var.region
