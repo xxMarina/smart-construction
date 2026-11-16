@@ -200,7 +200,7 @@
         state: present
         pull: always
         wait: true
-        wait_timeout: 180
+        wait_timeout: 300
 
     - name: Subir Gateway Nginx e Frontend Next.js
       community.docker.docker_compose_v2:
