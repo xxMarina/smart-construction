@@ -29,17 +29,13 @@ locals {
   ]
 }
 
-resource "google_secret_manager_secret" "app_secrets" {
+data "google_secret_manager_secret" "app_secrets" {
   for_each  = toset(local.secrets)
   secret_id = each.value
-
-  replication {
-    auto {}
-  }
 }
 
 resource "google_secret_manager_secret_iam_member" "vm_secret_accessor" {
-  for_each  = google_secret_manager_secret.app_secrets
+  for_each  = data.google_secret_manager_secret.app_secrets
   secret_id = each.value.id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.app_sa.email}"
