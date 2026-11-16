@@ -165,7 +165,7 @@ jobs:
 
       - name: Preparar chave SSH para IAP (App)
         if: github.event_name != 'pull_request'
-        run: gcloud compute ssh smart-construction-app --zone=southamerica-east1-a --project=${{ env.PROJECT_ID }} --tunnel-through-iap --command="true" --quiet
+        run: gcloud compute ssh smart-construction-app-1 --zone=southamerica-east1-a --project=${{ env.PROJECT_ID }} --tunnel-through-iap --command="true" --quiet
 
       - name: Executar Playbook App
         if: github.event_name != 'pull_request'
