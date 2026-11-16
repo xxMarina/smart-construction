@@ -19,3 +19,19 @@ __pycache__/
 operations/retention/
 
 docs/evidence/playwright-results.json
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# Segredos locais e chaves
+.env
+.env.*
+!.env.example
+.secrets/
+*.pem
+*.key
+*-key.json

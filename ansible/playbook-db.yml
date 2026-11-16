@@ -1,0 +1,70 @@
+- name: Configurar VM do Banco de Dados
+  hosts: db
+  become: true
+  tasks:
+    - name: Formatar disco persistente se ainda não tiver filesystem
+      community.general.filesystem:
+        fstype: ext4
+        dev: /dev/disk/by-id/google-backend-data
+
+    - name: Montar volume persistente do PostgreSQL
+      ansible.posix.mount:
+        path: /mnt/backend-data
+        src: /dev/disk/by-id/google-backend-data
+        fstype: ext4
+        state: mounted
+
+    - name: Garantir subdiretório pgdata (evita conflito com lost+found do ext4)
+      ansible.builtin.file:
+        path: /mnt/backend-data/pgdata
+        state: directory
+        owner: "999"
+        group: "999"
+        mode: "0700"
+
+    - name: Buscar senha do banco no Secret Manager
+      ansible.builtin.command: gcloud secrets versions access latest --secret="sc-db-password"
+      register: db_pass
+      changed_when: false
+      no_log: true
+
+    - name: Subir container PostgreSQL 17
+      community.docker.docker_container:
+        name: postgres-db
+        image: postgres:17-bookworm
+        state: started
+        restart_policy: unless-stopped
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_DB: smart_construction
+          POSTGRES_USER: smart_migrator
+          POSTGRES_PASSWORD: "{{ db_pass.stdout }}"
+          PGDATA: /var/lib/postgresql/data/pgdata
+        volumes:
+          - /mnt/backend-data:/var/lib/postgresql/data
+
+    - name: Aguardar PostgreSQL aceitar conexões
+      ansible.builtin.command: docker exec postgres-db pg_isready -U smart_migrator -d smart_construction
+      register: pg_ready
+      until: pg_ready.rc == 0
+      retries: 15
+      delay: 2
+      changed_when: false
+
+    - name: Criar role smart_api caso ainda não exista
+      ansible.builtin.shell: |
+        docker exec -i postgres-db psql -U smart_migrator -d smart_construction -tAc "SELECT 1 FROM pg_roles WHERE rolname='smart_api'" | grep -q 1 || \
+        docker exec -i postgres-db psql -U smart_migrator -d smart_construction -c "CREATE ROLE smart_api LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+      changed_when: false
+
+    - name: Sincronizar senhas e permissões de smart_migrator e smart_api
+      ansible.builtin.command:
+        cmd: >
+          docker exec -i postgres-db psql -U smart_migrator -d smart_construction -c
+          "ALTER ROLE smart_migrator WITH PASSWORD '{{ db_pass.stdout }}';
+          ALTER ROLE smart_api WITH PASSWORD '{{ db_pass.stdout }}';
+          REVOKE ALL ON DATABASE smart_construction FROM PUBLIC;
+          GRANT CONNECT ON DATABASE smart_construction TO smart_api;
+          REVOKE CREATE ON SCHEMA public FROM PUBLIC;"
+      no_log: true
