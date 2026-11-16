@@ -1,0 +1,39 @@
+name: Power Management (Stop / Start VMs)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Ação nas instâncias Compute Engine'
+        required: true
+        type: choice
+        options:
+          - stop
+          - start
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  power-vms:
+    name: "${{ github.event.inputs.action }} VMs na GCP"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Autenticar na GCP via OIDC
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configurar Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Executar ${{ github.event.inputs.action }} nas VMs
+        run: |
+          gcloud compute instances ${{ github.event.inputs.action }} \
+            smart-construction-app-1 \
+            smart-construction-app-2 \
+            smart-construction-db \
+            --zone=southamerica-east1-a \
+            --project=projeto-mensal-4
