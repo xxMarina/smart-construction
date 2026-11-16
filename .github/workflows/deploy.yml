@@ -123,6 +123,10 @@ jobs:
         working-directory: ansible
         run: ansible-playbook --syntax-check playbook-db.yml
 
+      - name: Preparar chave SSH para IAP (DB)
+        if: github.event_name != 'pull_request'
+        run: gcloud compute ssh smart-construction-db --zone=southamerica-east1-a --project=${{ env.PROJECT_ID }} --tunnel-through-iap --command="true" --quiet
+
       - name: Executar Playbook DB
         if: github.event_name != 'pull_request'
         working-directory: ansible
@@ -158,6 +162,10 @@ jobs:
       - name: Validar sintaxe do Playbook App
         working-directory: ansible
         run: ansible-playbook --syntax-check playbook-app.yml
+
+      - name: Preparar chave SSH para IAP (App)
+        if: github.event_name != 'pull_request'
+        run: gcloud compute ssh smart-construction-app --zone=southamerica-east1-a --project=${{ env.PROJECT_ID }} --tunnel-through-iap --command="true" --quiet
 
       - name: Executar Playbook App
         if: github.event_name != 'pull_request'
