@@ -1,0 +1,92 @@
+name: Deploy Smart Construction (GCP)
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: projeto-mensal-4
+  REGION: southamerica-east1
+  REGISTRY: southamerica-east1-docker.pkg.dev/projeto-mensal-4/smart-construction
+
+jobs:
+  build-and-push:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Autenticar na GCP via OIDC
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configurar Docker no Artifact Registry
+        run: gcloud auth configure-docker southamerica-east1-docker.pkg.dev --quiet
+
+      - name: Build e Push da imagem Web (Next.js)
+        run: |
+          docker build --target runner \
+            -t "${{ env.REGISTRY }}/web:${{ github.sha }}" \
+            -t "${{ env.REGISTRY }}/web:latest" .
+          docker push "${{ env.REGISTRY }}/web:${{ github.sha }}"
+          docker push "${{ env.REGISTRY }}/web:latest"
+
+      - name: Build e Push da imagem API (FastAPI)
+        run: |
+          docker build --target runtime \
+            -t "${{ env.REGISTRY }}/api:${{ github.sha }}" \
+            -t "${{ env.REGISTRY }}/api:latest" ./backend
+          docker push "${{ env.REGISTRY }}/api:${{ github.sha }}"
+          docker push "${{ env.REGISTRY }}/api:latest"
+
+  deploy-infra-and-app:
+    name: Provisionar Terraform & Configurar Ansible
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Autenticar na GCP via OIDC
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configurar Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Instalar Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform Init & Apply
+        working-directory: terraform
+        run: |
+          terraform init -input=false
+          terraform apply -auto-approve -input=false
+
+      - name: Instalar Ansible e coleções GCP/Docker
+        run: |
+          pip install --quiet ansible google-auth requests
+          ansible-galaxy collection install google.cloud community.docker community.general ansible.posix
+
+      - name: Executar Playbooks Ansible (Banco e Aplicação)
+        working-directory: ansible
+        env:
+          GCP_AUTH_KIND: application
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: |
+          ansible-playbook playbook-db.yml
+          ansible-playbook playbook-app.yml
