@@ -34,29 +34,32 @@ jobs:
         if: github.event_name != 'pull_request'
         run: gcloud auth configure-docker southamerica-east1-docker.pkg.dev --quiet
 
-      - name: Build da imagem Web (Next.js)
-        run: |
-          docker build --target runner \
-            -t "${{ env.REGISTRY }}/web:${{ github.sha }}" \
-            -t "${{ env.REGISTRY }}/web:latest" .
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Push da imagem Web (Next.js)
-        if: github.event_name != 'pull_request'
-        run: |
-          docker push "${{ env.REGISTRY }}/web:${{ github.sha }}"
-          docker push "${{ env.REGISTRY }}/web:latest"
+      - name: Build & Push da imagem Web (Next.js)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runner
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/web:${{ github.sha }}
+            ${{ env.REGISTRY }}/web:latest
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
 
-      - name: Build da imagem API (FastAPI)
-        run: |
-          docker build --target runtime \
-            -t "${{ env.REGISTRY }}/api:${{ github.sha }}" \
-            -t "${{ env.REGISTRY }}/api:latest" ./backend
-
-      - name: Push da imagem API (FastAPI)
-        if: github.event_name != 'pull_request'
-        run: |
-          docker push "${{ env.REGISTRY }}/api:${{ github.sha }}"
-          docker push "${{ env.REGISTRY }}/api:latest"
+      - name: Build & Push da imagem API (FastAPI)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          target: runtime
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/api:${{ github.sha }}
+            ${{ env.REGISTRY }}/api:latest
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
 
   terraform-apply:
     name: 2. Terraform Apply
@@ -76,6 +79,14 @@ jobs:
       - name: Configurar Google Cloud SDK
         if: github.event_name != 'pull_request'
         uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cache de providers do Terraform
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: ${{ runner.os }}-terraform-${{ hashFiles('terraform/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-
 
       - name: Instalar Terraform
         uses: hashicorp/setup-terraform@v3
@@ -113,6 +124,16 @@ jobs:
       - name: Configurar Google Cloud SDK
         if: github.event_name != 'pull_request'
         uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cache de pip e coleções Ansible
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.ansible/collections
+          key: ${{ runner.os }}-ansible-v1
+          restore-keys: |
+            ${{ runner.os }}-ansible-
 
       - name: Instalar Ansible e coleções GCP/Docker
         run: |
@@ -153,6 +174,16 @@ jobs:
       - name: Configurar Google Cloud SDK
         if: github.event_name != 'pull_request'
         uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cache de pip e coleções Ansible
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.ansible/collections
+          key: ${{ runner.os }}-ansible-v1
+          restore-keys: |
+            ${{ runner.os }}-ansible-
 
       - name: Instalar Ansible e coleções GCP/Docker
         run: |

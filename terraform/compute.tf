@@ -21,34 +21,22 @@ resource "google_compute_resource_policy" "daily_backup" {
   }
 }
 
-# --- DISCOS PERSISTENTES (Protegidos contra destruição acidental) ---
-resource "google_compute_disk" "db_data" {
+# --- DISCOS PERSISTENTES (Gerenciados fora do state para sobreviver ao destroy) ---
+data "google_compute_disk" "db_data" {
   name = "smart-construction-backend-data"
-  type = "pd-balanced"
   zone = var.zone
-  size = 20
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "google_compute_disk_resource_policy_attachment" "db_backup" {
   name = google_compute_resource_policy.daily_backup.name
-  disk = google_compute_disk.db_data.name
+  disk = data.google_compute_disk.db_data.name
   zone = var.zone
 }
 
-resource "google_compute_disk" "app_storage" {
+data "google_compute_disk" "app_storage" {
   count = 2
   name  = "smart-construction-storage-data-${count.index + 1}"
-  type  = "pd-balanced"
   zone  = var.zone
-  size  = 20
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 # --- 2 VMs DE APLICAÇÃO (Nginx, Next.js, FastAPI, SeaweedFS) ---
@@ -67,7 +55,7 @@ resource "google_compute_instance" "app" {
   }
 
   attached_disk {
-    source      = google_compute_disk.app_storage[count.index].id
+    source      = data.google_compute_disk.app_storage[count.index].id
     device_name = "storage-data"
   }
 
@@ -104,7 +92,7 @@ resource "google_compute_instance" "db" {
   }
 
   attached_disk {
-    source      = google_compute_disk.db_data.id
+    source      = data.google_compute_disk.db_data.id
     device_name = "backend-data"
   }
 
