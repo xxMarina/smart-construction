@@ -1,0 +1,13 @@
+plugin: google.cloud.gcp_compute
+projects:
+  - projeto-mensal-4
+zones:
+  - southamerica-east1-a
+auth_kind: application
+hostnames:
+  - name
+groups:
+  app: "'app' in name"
+  db: "'db' in name"
+compose:
+  ansible_host: name

@@ -1,0 +1,51 @@
+name: PR Check (Infra)
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-check:
+    name: Terraform Format & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Verificar formatação (terraform fmt)
+        working-directory: terraform
+        run: terraform fmt -check -recursive
+
+      - name: Validar configuração (terraform validate)
+        working-directory: terraform
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+  ansible-check:
+    name: Ansible Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar Ansible e coleções
+        run: |
+          pip install --quiet ansible google-auth requests
+          ansible-galaxy collection install google.cloud community.docker community.general ansible.posix
+
+      - name: Validar sintaxe dos playbooks
+        working-directory: ansible
+        run: |
+          ansible-playbook --syntax-check playbook-db.yml
+          ansible-playbook --syntax-check playbook-app.yml
