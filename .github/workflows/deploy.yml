@@ -4,11 +4,6 @@ on:
   push:
     branches:
       - main
-      - develop
-  pull_request:
-    branches:
-      - main
-      - develop
   workflow_dispatch:
 
 permissions:
@@ -22,7 +17,7 @@ env:
 
 jobs:
   build-and-push:
-    name: Build & Push Docker Images
+    name: 1. Build & Push Docker
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
@@ -63,8 +58,8 @@ jobs:
           docker push "${{ env.REGISTRY }}/api:${{ github.sha }}"
           docker push "${{ env.REGISTRY }}/api:latest"
 
-  deploy-infra-and-app:
-    name: Provisionar Terraform & Configurar Ansible
+  terraform-apply:
+    name: 2. Terraform Apply
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
@@ -100,23 +95,74 @@ jobs:
           terraform init -input=false
           terraform apply -auto-approve -input=false
 
+  ansible-db:
+    name: 3. Ansible DB
+    needs: terraform-apply
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Autenticar na GCP via OIDC
+        if: github.event_name != 'pull_request'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configurar Google Cloud SDK
+        if: github.event_name != 'pull_request'
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Instalar Ansible e coleções GCP/Docker
         run: |
           pip install --quiet ansible google-auth requests
           ansible-galaxy collection install google.cloud community.docker community.general ansible.posix
 
-      - name: Validar sintaxe dos Playbooks Ansible
+      - name: Validar sintaxe do Playbook DB
         working-directory: ansible
-        run: |
-          ansible-playbook --syntax-check playbook-db.yml
-          ansible-playbook --syntax-check playbook-app.yml
+        run: ansible-playbook --syntax-check playbook-db.yml
 
-      - name: Executar Playbooks Ansible (Banco e Aplicação)
+      - name: Executar Playbook DB
         if: github.event_name != 'pull_request'
         working-directory: ansible
         env:
           GCP_AUTH_KIND: application
           ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: ansible-playbook playbook-db.yml
+
+  ansible-app:
+    name: 4. Ansible App
+    needs: ansible-db
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Autenticar na GCP via OIDC
+        if: github.event_name != 'pull_request'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configurar Google Cloud SDK
+        if: github.event_name != 'pull_request'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Instalar Ansible e coleções GCP/Docker
         run: |
-          ansible-playbook playbook-db.yml
-          ansible-playbook playbook-app.yml
+          pip install --quiet ansible google-auth requests
+          ansible-galaxy collection install google.cloud community.docker community.general ansible.posix
+
+      - name: Validar sintaxe do Playbook App
+        working-directory: ansible
+        run: ansible-playbook --syntax-check playbook-app.yml
+
+      - name: Executar Playbook App
+        if: github.event_name != 'pull_request'
+        working-directory: ansible
+        env:
+          GCP_AUTH_KIND: application
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: ansible-playbook playbook-app.yml
