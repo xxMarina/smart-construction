@@ -65,7 +65,7 @@ resource "google_compute_instance" "app" {
   }
 
   service_account {
-    email  = google_service_account.app_sa.email
+    email  = data.google_service_account.app_sa.email
     scopes = ["cloud-platform"]
   }
 
@@ -101,7 +101,7 @@ resource "google_compute_instance" "db" {
   }
 
   service_account {
-    email  = google_service_account.app_sa.email
+    email  = data.google_service_account.app_sa.email
     scopes = ["cloud-platform"]
   }
 
