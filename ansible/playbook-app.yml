@@ -6,7 +6,6 @@
     repo_url: "https://github.com/LaercioMLB/smart-construction.git"
     db_private_ip: "10.10.0.4"
     registry_url: "southamerica-east1-docker.pkg.dev/projeto-mensal-4/smart-construction"
-    app_url: "https://34.54.146.153.sslip.io"
 
   tasks:
     # 1. PERSISTÊNCIA DO ARMAZENAMENTO (SeaweedFS)
