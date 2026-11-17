@@ -192,13 +192,23 @@
         - private-storage-init
         - storage-init
 
-    - name: Subir Gateway Nginx, Frontend Next.js e Backend FastAPI
+    - name: Subir Backend FastAPI e aguardar ficar saudavel
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        services:
+          - api
+        state: present
+        pull: always
+        wait: true
+        wait_timeout: 300
+
+    - name: Subir Gateway Nginx e Frontend Next.js
       community.docker.docker_compose_v2:
         project_src: "{{ app_dir }}"
         services:
           - gateway
           - web
-          - api
         state: present
         pull: always
+        dependencies: false
         remove_orphans: true

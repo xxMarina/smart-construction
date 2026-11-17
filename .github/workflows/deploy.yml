@@ -19,8 +19,8 @@ env:
   REGISTRY: southamerica-east1-docker.pkg.dev/projeto-mensal-4/smart-construction
 
 jobs:
-  build-and-push:
-    name: 1. Build & Push Docker
+  build-web:
+    name: 1a. Build & Push Web
     needs: terraform-apply
     runs-on: ubuntu-latest
     steps:
@@ -53,6 +53,28 @@ jobs:
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 
+  build-api:
+    name: 1b. Build & Push API
+    needs: terraform-apply
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Autenticar na GCP via OIDC
+        if: github.event_name != 'pull_request'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configurar Docker no Artifact Registry
+        if: github.event_name != 'pull_request'
+        run: gcloud auth configure-docker southamerica-east1-docker.pkg.dev --quiet
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build & Push da imagem API (FastAPI)
         uses: docker/build-push-action@v6
         with:
@@ -68,6 +90,8 @@ jobs:
   terraform-apply:
     name: 2. Terraform Apply
     runs-on: ubuntu-latest
+    outputs:
+      https_url: ${{ steps.tf_output.outputs.https_url }}
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
@@ -102,12 +126,31 @@ jobs:
           terraform init -backend=false -input=false
           terraform validate
 
-      - name: Terraform Init & Apply
+      - name: Terraform Init & Plan
         if: github.event_name != 'pull_request'
+        id: tf_plan
         working-directory: terraform
         run: |
           terraform init -input=false
-          terraform apply -auto-approve -input=false
+          set +e
+          terraform plan -detailed-exitcode -input=false -out=tfplan
+          EXIT_CODE=$?
+          set -e
+          echo "exitcode=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [ "$EXIT_CODE" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Terraform Apply
+        if: github.event_name != 'pull_request' && steps.tf_plan.outputs.exitcode == '2'
+        working-directory: terraform
+        run: terraform apply -auto-approve -input=false tfplan
+
+      - name: Exportar URL HTTPS do Load Balancer
+        if: github.event_name != 'pull_request'
+        id: tf_output
+        working-directory: terraform
+        run: echo "https_url=$(terraform output -raw https_url)" >> "$GITHUB_OUTPUT"
 
   ansible-db:
     name: 3. Ansible DB
@@ -161,7 +204,7 @@ jobs:
 
   ansible-app:
     name: 4. Ansible App
-    needs: [ansible-db, build-and-push]
+    needs: [terraform-apply, ansible-db, build-web, build-api]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
@@ -207,4 +250,4 @@ jobs:
         env:
           GCP_AUTH_KIND: application
           ANSIBLE_HOST_KEY_CHECKING: "False"
-        run: ansible-playbook playbook-app.yml
+        run: ansible-playbook playbook-app.yml -e "app_url=${{ needs.terraform-apply.outputs.https_url }}"
