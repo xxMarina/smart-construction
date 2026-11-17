@@ -151,7 +151,7 @@ jobs:
         id: tf_output
         working-directory: terraform
         run: |
-          URL=$(terraform output -raw https_url 2>/dev/null || true)
+          URL=$(terraform output -raw https_url 2>/dev/null | grep -E '^https?://' || true)
           echo "https_url=$URL" >> "$GITHUB_OUTPUT"
 
   ansible-db:
