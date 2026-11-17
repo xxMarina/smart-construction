@@ -210,4 +210,5 @@
           - web
         state: present
         pull: always
+        dependencies: false
         remove_orphans: true
