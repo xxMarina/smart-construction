@@ -1,0 +1,57 @@
+name: Backup and Restore Test (Isolated)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: projeto-mensal-4
+  ZONE: southamerica-east1-a
+
+jobs:
+  backup-restore-test:
+    name: Teste Isolado de Backup e Restauração (PostgreSQL)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Autenticar na GCP via OIDC (Workload Identity)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configurar Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Executar Backup e Restauração Isolada via IAP
+        run: |
+          gcloud compute ssh smart-construction-db \
+            --zone="${{ env.ZONE }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --tunnel-through-iap \
+            --quiet \
+            --command='bash -euo pipefail -c "
+              echo \"=== 1. Gerando dump do banco principal (smart_construction) ===\"
+              sudo docker exec postgres-db pg_dump -U smart_migrator -d smart_construction -Fc -f /tmp/sc_backup_test.dump
+
+              echo \"=== 2. Criando banco isolado (smart_construction_restore_test) ===\"
+              sudo docker exec postgres-db psql -U smart_migrator -d postgres -c \"DROP DATABASE IF EXISTS smart_construction_restore_test;\"
+              sudo docker exec postgres-db psql -U smart_migrator -d postgres -c \"CREATE DATABASE smart_construction_restore_test;\"
+
+              echo \"=== 3. Restaurando dump no banco isolado ===\"
+              sudo docker exec postgres-db pg_restore -U smart_migrator -d smart_construction_restore_test --no-owner --no-acl /tmp/sc_backup_test.dump
+
+              echo \"=== 4. Validando integridade dos dados restaurados ===\"
+              ORIG_COUNT=\$(sudo docker exec postgres-db psql -U smart_migrator -d smart_construction -tAc \"SELECT count(*) FROM professions;\")
+              REST_COUNT=\$(sudo docker exec postgres-db psql -U smart_migrator -d smart_construction_restore_test -tAc \"SELECT count(*) FROM professions;\")
+              echo \"Profissões no banco principal: \$ORIG_COUNT\"
+              echo \"Profissões no banco restaurado: \$REST_COUNT\"
+              test \"\$ORIG_COUNT\" = \"\$REST_COUNT\"
+
+              echo \"=== 5. Limpando banco temporário e arquivo de dump ===\"
+              sudo docker exec postgres-db psql -U smart_migrator -d postgres -c \"DROP DATABASE smart_construction_restore_test;\"
+              sudo docker exec postgres-db rm -f /tmp/sc_backup_test.dump
+              echo \"Teste de backup e restauração isolada concluído com sucesso!\"
+            "'

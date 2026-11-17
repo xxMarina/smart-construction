@@ -6,7 +6,6 @@
     repo_url: "https://github.com/LaercioMLB/smart-construction.git"
     db_private_ip: "10.10.0.4"
     registry_url: "southamerica-east1-docker.pkg.dev/projeto-mensal-4/smart-construction"
-    app_url: "https://34.54.146.153.sslip.io"
 
   tasks:
     # 1. PERSISTÊNCIA DO ARMAZENAMENTO (SeaweedFS)
@@ -193,14 +192,30 @@
         - storage-init
 
     - name: Subir Backend FastAPI e aguardar ficar saudavel
-      community.docker.docker_compose_v2:
-        project_src: "{{ app_dir }}"
-        services:
-          - api
-        state: present
-        pull: always
-        wait: true
-        wait_timeout: 300
+      block:
+        - name: Iniciar servico api com retry
+          community.docker.docker_compose_v2:
+            project_src: "{{ app_dir }}"
+            services:
+              - api
+            state: present
+            pull: always
+            wait: true
+            wait_timeout: 300
+          register: api_up
+          retries: 2
+          delay: 10
+          until: api_up is succeeded
+      rescue:
+        - name: Coletar logs do container api em caso de falha
+          ansible.builtin.command: docker logs --tail 80 smart-construction-api-1
+          register: api_logs
+          changed_when: false
+          failed_when: false
+
+        - name: Exibir logs do container api e falhar
+          ansible.builtin.fail:
+            msg: "{{ api_logs.stdout_lines | default([]) + api_logs.stderr_lines | default([]) }}"
 
     - name: Subir Gateway Nginx e Frontend Next.js
       community.docker.docker_compose_v2:
