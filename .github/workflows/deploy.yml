@@ -22,7 +22,7 @@ jobs:
   build-web:
     name: 1a. Build & Push Web
     needs: terraform-apply
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
@@ -56,7 +56,7 @@ jobs:
   build-api:
     name: 1b. Build & Push API
     needs: terraform-apply
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
@@ -89,7 +89,7 @@ jobs:
 
   terraform-apply:
     name: 2. Terraform Apply
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       https_url: ${{ steps.tf_output.outputs.https_url }}
     steps:
@@ -155,7 +155,7 @@ jobs:
   ansible-db:
     name: 3. Ansible DB
     needs: terraform-apply
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
@@ -205,7 +205,7 @@ jobs:
   ansible-app:
     name: 4. Ansible App
     needs: [terraform-apply, ansible-db, build-web, build-api]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4

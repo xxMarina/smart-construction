@@ -18,7 +18,7 @@ permissions:
 jobs:
   power-vms:
     name: "${{ github.event.inputs.action }} VMs na GCP"
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Autenticar na GCP via OIDC
         uses: google-github-actions/auth@v2

@@ -12,7 +12,7 @@ permissions:
 jobs:
   terraform-check:
     name: Terraform Format & Validate
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
 
   ansible-check:
     name: Ansible Syntax Check
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
