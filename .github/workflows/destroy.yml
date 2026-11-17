@@ -15,7 +15,7 @@ permissions:
 jobs:
   destroy:
     name: Terraform Destroy
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: github.event.inputs.confirm == 'DESTROY'
     steps:
       - name: Checkout do código
