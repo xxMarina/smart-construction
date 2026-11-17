@@ -90,6 +90,8 @@ jobs:
   terraform-apply:
     name: 2. Terraform Apply
     runs-on: ubuntu-latest
+    outputs:
+      https_url: ${{ steps.tf_output.outputs.https_url }}
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
@@ -144,6 +146,12 @@ jobs:
         working-directory: terraform
         run: terraform apply -auto-approve -input=false tfplan
 
+      - name: Exportar URL HTTPS do Load Balancer
+        if: github.event_name != 'pull_request'
+        id: tf_output
+        working-directory: terraform
+        run: echo "https_url=$(terraform output -raw https_url)" >> "$GITHUB_OUTPUT"
+
   ansible-db:
     name: 3. Ansible DB
     needs: terraform-apply
@@ -196,7 +204,7 @@ jobs:
 
   ansible-app:
     name: 4. Ansible App
-    needs: [ansible-db, build-web, build-api]
+    needs: [terraform-apply, ansible-db, build-web, build-api]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
@@ -242,4 +250,4 @@ jobs:
         env:
           GCP_AUTH_KIND: application
           ANSIBLE_HOST_KEY_CHECKING: "False"
-        run: ansible-playbook playbook-app.yml
+        run: ansible-playbook playbook-app.yml -e "app_url=${{ needs.terraform-apply.outputs.https_url }}"
