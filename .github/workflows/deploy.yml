@@ -150,7 +150,9 @@ jobs:
         if: github.event_name != 'pull_request'
         id: tf_output
         working-directory: terraform
-        run: echo "https_url=$(terraform output -raw https_url)" >> "$GITHUB_OUTPUT"
+        run: |
+          URL=$(terraform output -raw https_url 2>/dev/null || true)
+          echo "https_url=$URL" >> "$GITHUB_OUTPUT"
 
   ansible-db:
     name: 3. Ansible DB
