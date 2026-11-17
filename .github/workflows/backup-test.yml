@@ -27,12 +27,7 @@ jobs:
 
       - name: Executar Backup e Restauração Isolada via IAP
         run: |
-          gcloud compute ssh smart-construction-db \
-            --zone="${{ env.ZONE }}" \
-            --project="${{ env.PROJECT_ID }}" \
-            --tunnel-through-iap \
-            --quiet \
-            --command="bash -eo pipefail -s" << 'EOF'
+          SCRIPT=$(base64 -w0 << 'EOF'
           echo "=== 1. Gerando dump do banco principal (smart_construction) ==="
           sudo docker exec postgres-db pg_dump -U smart_migrator -d smart_construction -Fc -f /tmp/sc_backup_test.dump
 
@@ -46,13 +41,23 @@ jobs:
           echo "=== 4. Validando integridade dos dados restaurados ==="
           ORIG_TABLES=$(sudo docker exec postgres-db psql -U smart_migrator -d smart_construction -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';")
           REST_TABLES=$(sudo docker exec postgres-db psql -U smart_migrator -d smart_construction_restore_test -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';")
-          echo "Tabelas no banco principal: $ORIG_TABLES"
-          echo "Tabelas no banco restaurado: $REST_TABLES"
+          ORIG_PROF=$(sudo docker exec postgres-db psql -U smart_migrator -d smart_construction -tAc "SELECT count(*) FROM profissoes;")
+          REST_PROF=$(sudo docker exec postgres-db psql -U smart_migrator -d smart_construction_restore_test -tAc "SELECT count(*) FROM profissoes;")
+          echo "Tabelas no banco principal: $ORIG_TABLES | restaurado: $REST_TABLES"
+          echo "Profissoes no banco principal: $ORIG_PROF | restaurado: $REST_PROF"
           sudo docker exec postgres-db psql -U smart_migrator -d smart_construction_restore_test -c "\dt"
           test "$ORIG_TABLES" = "$REST_TABLES" && test "$REST_TABLES" -gt 0
+          test "$ORIG_PROF" = "$REST_PROF"
 
           echo "=== 5. Limpando banco temporário e arquivo de dump ==="
           sudo docker exec postgres-db psql -U smart_migrator -d postgres -c "DROP DATABASE smart_construction_restore_test;"
           sudo docker exec postgres-db rm -f /tmp/sc_backup_test.dump
           echo "Teste de backup e restauração isolada concluído com sucesso!"
           EOF
+          )
+          gcloud compute ssh smart-construction-db \
+            --zone="${{ env.ZONE }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --tunnel-through-iap \
+            --quiet \
+            --command="echo $SCRIPT | base64 -d | bash -eo pipefail"
