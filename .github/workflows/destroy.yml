@@ -28,6 +28,58 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
+      - name: Configurar Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Backup pré-destroy do PostgreSQL (via IAP)
+        id: backup
+        run: |
+          PROJECT_ID="projeto-mensal-4"
+          ZONE="southamerica-east1-a"
+          STATUS=$(gcloud compute instances describe smart-construction-db \
+            --zone="$ZONE" \
+            --project="$PROJECT_ID" \
+            --format="value(status)" 2>/dev/null || echo "NOT_FOUND")
+
+          if [ "$STATUS" != "RUNNING" ]; then
+            echo "VM smart-construction-db está com status '$STATUS'; pulando dump pré-destroy."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          DUMP_FILE="sc-pre-destroy-${{ github.run_id }}.dump"
+          gcloud compute ssh smart-construction-db \
+            --zone="$ZONE" \
+            --project="$PROJECT_ID" \
+            --tunnel-through-iap \
+            --quiet \
+            --command="sudo docker exec postgres-db pg_dump -U smart_migrator -d smart_construction -Fc > /tmp/sc_pre_destroy.dump && test -s /tmp/sc_pre_destroy.dump"
+
+          gcloud compute scp \
+            --zone="$ZONE" \
+            --project="$PROJECT_ID" \
+            --tunnel-through-iap \
+            --quiet \
+            "smart-construction-db:/tmp/sc_pre_destroy.dump" "./${DUMP_FILE}"
+
+          gcloud compute ssh smart-construction-db \
+            --zone="$ZONE" \
+            --project="$PROJECT_ID" \
+            --tunnel-through-iap \
+            --quiet \
+            --command="rm -f /tmp/sc_pre_destroy.dump"
+
+          echo "file=${DUMP_FILE}" >> "$GITHUB_OUTPUT"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+      - name: Salvar backup pré-destroy como Artifact
+        if: steps.backup.outputs.created == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-pre-destroy-${{ github.run_id }}
+          path: ${{ steps.backup.outputs.file }}
+          retention-days: 30
+
       - name: Instalar Terraform
         uses: hashicorp/setup-terraform@v3
         with:

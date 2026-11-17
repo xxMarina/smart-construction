@@ -11,7 +11,8 @@ Toda a infraestrutura e implantação são automatizadas via GitHub Actions, aut
 | Workflow | Arquivo | Gatilho | Responsabilidade |
 | :--- | :--- | :--- | :--- |
 | **Deploy** | `.github/workflows/deploy.yml` | Push em `main` / PR / `workflow_dispatch` | `terraform init/plan/apply`, build & push das imagens Docker para o Artifact Registry e configuração das VMs via Ansible (`playbook-db.yml` e `playbook-app.yml`) por túnel IAP. |
-| **Destroy** | `.github/workflows/destroy.yml` | `workflow_dispatch` | `terraform destroy` para remover VMs, rede/LB e recursos efêmeros, preservando discos persistentes de dados/storage e estado remoto. |
+| **Destroy** | `.github/workflows/destroy.yml` | `workflow_dispatch` | Executa backup lógico pré-destroy do PostgreSQL (Artifact no GitHub Actions) e `terraform destroy` para remover VMs, rede/LB e recursos efêmeros, preservando discos persistentes e estado remoto. |
+| **Backup Test** | `.github/workflows/backup-test.yml` | `workflow_dispatch` | Executa `pg_dump` do banco principal e valida `pg_restore` em banco isolado (`smart_construction_restore_test`) via túnel IAP. |
 | **Power Schedule** | `.github/workflows/power-schedule.yml` | Agendamento / `workflow_dispatch` | Liga/desliga as VMs (`TERMINATED`) fora do horário operacional para redução de custos de computação. |
 
 ---
@@ -48,13 +49,21 @@ Para manter o estado e as credenciais protegidos fora do controle de versão e e
 ## 5. Plano de Backup e Restauração
 
 ### 5.1. Estratégia
-- **Banco de Dados (PostgreSQL 17):** Backups lógicos via `pg_dump` (formato customizado `.dump`) na VM `smart-construction-db`, além da persistência em disco dedicado (`smart-construction-backend-data`).
+- **Banco de Dados (PostgreSQL 17):** Backups lógicos via `pg_dump` (formato customizado `.dump`) na VM `smart-construction-db`, além da persistência em disco dedicado (`smart-construction-backend-data`). O workflow `destroy.yml` também gera automaticamente um dump pré-destroy e o armazena como Artifact no GitHub Actions (retenção de 30 dias) antes de remover a VM.
 - **Armazenamento de Arquivos (SeaweedFS):** Dados gravados nos discos persistentes dedicados (`smart-construction-storage-data-1` e `smart-construction-storage-data-2`).
 
 ### 5.2. Teste de Restauração em Ambiente Isolado
-> **Status:** *Pendente de execução e registro de evidência.*
->
-> O teste consiste em gerar um dump do banco principal e restaurá-lo em um banco/ambiente isolado (sem sobrescrever o ambiente principal), validando a integridade das tabelas e registros.
+> **Status:** Validado via pipeline (`.github/workflows/backup-test.yml`) em **17/11/2026**.
+
+Procedimento automatizado executado via túnel IAP na VM `smart-construction-db`:
+1. Geração de dump customizado (`pg_dump -U smart_migrator -d smart_construction -Fc -f /tmp/sc_backup_test.dump`).
+2. Criação do banco isolado `smart_construction_restore_test`.
+3. Restauração com `pg_restore --no-owner --no-acl` no banco isolado.
+4. Validação de integridade entre o banco principal e o banco restaurado:
+   - `Tabelas no schema smart (principal): 20 | restaurado: 20`
+   - `Profissoes no banco principal: 2 | restaurado: 2`
+   - Todas as 20 tabelas do schema `smart` restauradas (`aceites`, `administradores`, `arquivos`, `auditoria`, `cadastros`, `comprovantes_encerramento`, `empresas`, `enderecos`, `historico_cadastros`, `idempotencias_cadastro`, `limites_cadastro`, `limites_login`, `preservacoes`, `profissionais`, `profissional_cursos`, `profissional_profissoes`, `profissoes`, `publicacoes_profissionais`, `sessoes_admin`, `uploads_journal`).
+5. Limpeza automática do banco temporário `smart_construction_restore_test` e do arquivo `/tmp/sc_backup_test.dump`.
 
 ---
 
