@@ -68,3 +68,27 @@ resource "google_compute_global_forwarding_rule" "https_forwarding_rule" {
   target                = google_compute_target_https_proxy.https_proxy.id
   ip_address            = google_compute_global_address.lb_ip.address
 }
+
+resource "google_compute_url_map" "http_redirect" {
+  name = "smart-construction-http-redirect"
+
+  default_url_redirect {
+    https_redirect         = true
+    redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+    strip_query            = false
+  }
+}
+
+resource "google_compute_target_http_proxy" "http_proxy" {
+  name    = "smart-construction-http-proxy"
+  url_map = google_compute_url_map.http_redirect.id
+}
+
+resource "google_compute_global_forwarding_rule" "http_forwarding_rule" {
+  name                  = "smart-construction-http-rule"
+  ip_protocol           = "TCP"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  port_range            = "80"
+  target                = google_compute_target_http_proxy.http_proxy.id
+  ip_address            = google_compute_global_address.lb_ip.address
+}
