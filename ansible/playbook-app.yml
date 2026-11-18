@@ -4,7 +4,7 @@
   vars:
     app_dir: /opt/smart-construction
     repo_url: "https://github.com/LaercioMLB/smart-construction.git"
-    db_private_ip: "10.10.0.4"
+    db_private_ip: "{{ hostvars[groups['db'][0]].networkInterfaces[0].networkIP }}"
     registry_url: "southamerica-east1-docker.pkg.dev/projeto-mensal-4/smart-construction"
 
   tasks:
