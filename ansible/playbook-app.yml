@@ -3,7 +3,7 @@
   become: true
   vars:
     app_dir: /opt/smart-construction
-    repo_url: "https://github.com/LaercioMLB/smart-construction.git"
+    repo_url: "https://github.com/xxMarina/smart-construction.git"
     db_private_ip: "{{ hostvars[groups['db'][0]].networkInterfaces[0].networkIP }}"
     registry_url: "southamerica-east1-docker.pkg.dev/projeto-mensal-4/smart-construction"
 
@@ -60,7 +60,6 @@
       ansible.builtin.command: "gcloud secrets versions access latest --secret={{ item }}"
       loop:
         - sc-db-password
-        - sc-jwt-secret
         - sc-admin-password
         - sc-s3-access-key
         - sc-s3-secret-key
@@ -122,8 +121,10 @@
           HTTP_PORT=8081
           SMART_API_ENVIRONMENT=production
           SMART_API_ALLOWED_ORIGINS=["{{ app_url }}"]
-          JWT_SECRET={{ secrets_map['sc-jwt-secret'] }}
-          ADMIN_PASSWORD={{ secrets_map['sc-admin-password'] }}
+          REGISTRATIONS_UI_ENABLED=true
+          SMART_API_REGISTRATIONS_ENABLED=true
+          SMART_API_TERMS_VERSION=termos-lab-2026-11-11
+          SMART_API_PRIVACY_VERSION=privacidade-lab-2026-11-11
       no_log: true
 
     - name: Gerar docker-compose.override.yml para produção na GCP
@@ -151,7 +152,7 @@
               environment:
                 SMART_API_DB_HOST: {{ db_private_ip }}
                 SMART_API_ALLOWED_ORIGINS: '["{{ app_url }}"]'
-              depends_on:
+              depends_on: !override
                 api-migrate:
                   condition: service_completed_successfully
                 private-storage-init:
@@ -179,7 +180,7 @@
 
     - name: Executar migrations Alembic na VM primária
       ansible.builtin.command:
-        cmd: "docker compose run --rm api-migrate"
+        cmd: "docker compose run --rm --pull always api-migrate"
         chdir: "{{ app_dir }}"
       run_once: true
 
@@ -200,6 +201,7 @@
               - api
             state: present
             pull: always
+            dependencies: false
             wait: true
             wait_timeout: 300
           register: api_up
