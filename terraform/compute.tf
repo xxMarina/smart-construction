@@ -50,7 +50,7 @@ resource "google_compute_instance" "app" {
   boot_disk {
     initialize_params {
       image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
-      size  = 20
+      size  = 10
     }
   }
 
@@ -87,7 +87,7 @@ resource "google_compute_instance" "db" {
   boot_disk {
     initialize_params {
       image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
-      size  = 20
+      size  = 10
     }
   }
 
