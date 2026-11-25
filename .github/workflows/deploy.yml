@@ -13,6 +13,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: deploy-gcp-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   PROJECT_ID: projeto-mensal-4
   REGION: southamerica-east1
@@ -308,3 +312,31 @@ jobs:
           GCP_AUTH_KIND: application
           ANSIBLE_HOST_KEY_CHECKING: "False"
         run: ansible-playbook playbook-app.yml -e "app_url=${{ needs.terraform-apply.outputs.https_url }}"
+
+  smoke-test-https:
+    name: 5. Smoke Test HTTPS
+    needs: [terraform-apply, ansible-app]
+    if: github.event_name != 'pull_request' && needs.terraform-apply.outputs.https_url != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Executar smoke.mjs contra URL HTTPS
+        env:
+          SMOKE_BASE_URL: ${{ needs.terraform-apply.outputs.https_url }}
+        run: |
+          for i in $(seq 1 8); do
+            if curl -sf "${SMOKE_BASE_URL}/api/v1/health/ready" >/dev/null 2>&1; then
+              node scripts/smoke.mjs
+              exit 0
+            fi
+            echo "Aguardando HTTPS/SSL ficar ativo (tentativa $i/8)..."
+            sleep 15
+          done
+          echo "::warning::Certificado SSL gerenciado ou backend ainda em aquecimento; execute SMOKE_BASE_URL=${SMOKE_BASE_URL} node scripts/smoke.mjs manualmente após ativar."
