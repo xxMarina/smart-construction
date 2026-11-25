@@ -9,5 +9,6 @@ hostnames:
 groups:
   app: "'app' in name"
   db: "'db' in name"
+  storage: "'storage' in name"
 compose:
   ansible_host: name
