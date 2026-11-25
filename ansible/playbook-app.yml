@@ -5,38 +5,11 @@
     app_dir: /opt/smart-construction
     repo_url: "https://github.com/xxMarina/smart-construction.git"
     db_private_ip: "{{ hostvars[groups['db'][0]].networkInterfaces[0].networkIP }}"
+    storage_private_ip: "{{ hostvars[groups['storage'][0]].networkInterfaces[0].networkIP }}"
     registry_url: "southamerica-east1-docker.pkg.dev/projeto-mensal-4/smart-construction"
 
   tasks:
-    # 1. PERSISTÊNCIA DO ARMAZENAMENTO (SeaweedFS)
-    - name: Formatar disco persistente storage-data (apenas se estiver vazio)
-      community.general.filesystem:
-        fstype: ext4
-        dev: /dev/disk/by-id/google-storage-data
-
-    - name: Garantir diretório de montagem /mnt/storage-data
-      ansible.builtin.file:
-        path: /mnt/storage-data
-        state: directory
-        mode: "0755"
-
-    - name: Montar volume persistente storage-data
-      ansible.posix.mount:
-        path: /mnt/storage-data
-        src: /dev/disk/by-id/google-storage-data
-        fstype: ext4
-        state: mounted
-
-    - name: Criar subdiretórios para buckets editorial e privado
-      ansible.builtin.file:
-        path: "/mnt/storage-data/{{ item }}"
-        state: directory
-        mode: "0755"
-      loop:
-        - editorial
-        - private
-
-    # 2. REPOSITÓRIO DA APLICAÇÃO
+    # 1. REPOSITÓRIO DA APLICAÇÃO
     - name: Instalar git caso não esteja presente
       ansible.builtin.apt:
         name: git
@@ -55,12 +28,11 @@
       ansible.builtin.command: "gcloud auth configure-docker southamerica-east1-docker.pkg.dev --quiet"
       changed_when: false
 
-    # 4. BUSCA DE SEGREDOS NO GCP SECRET MANAGER
+    # 3. BUSCA DE SEGREDOS NO GCP SECRET MANAGER
     - name: Buscar segredos no Secret Manager
       ansible.builtin.command: "gcloud secrets versions access latest --secret={{ item }}"
       loop:
         - sc-db-password
-        - sc-admin-password
         - sc-s3-access-key
         - sc-s3-secret-key
       register: fetched_secrets
@@ -100,18 +72,17 @@
         - api-password
       no_log: true
 
-    - name: Sincronizar chaves S3 do storage editorial com o Secret Manager
+    - name: Sincronizar chaves S3 do backend com o Secret Manager
       ansible.builtin.copy:
-        dest: "{{ app_dir }}/.secrets/storage/{{ item.file }}"
-        content: "{{ secrets_map[item.secret] }}"
+        dest: "{{ app_dir }}/.secrets/backend/{{ item.file }}"
+        content: "{{ secrets_map[item.secret] }}\n"
         mode: "0444"
       loop:
-        - { file: "access-key", secret: "sc-s3-access-key" }
-        - { file: "secret-key", secret: "sc-s3-secret-key" }
-        - { file: "admin-password", secret: "sc-admin-password" }
+        - { file: "s3-api-access-key", secret: "sc-s3-access-key" }
+        - { file: "s3-api-secret-key", secret: "sc-s3-secret-key" }
       no_log: true
 
-    # 6. GERAR .ENV E OVERRIDE DE PRODUÇÃO (ARTIFACT REGISTRY + BANCO EXTERNO 10.10.0.4)
+    # 5. GERAR .ENV E OVERRIDE DE PRODUÇÃO (VPC: DB + STORAGE CENTRALIZADO)
     - name: Gerar arquivo .env seguro na VM
       ansible.builtin.copy:
         dest: "{{ app_dir }}/.env"
@@ -140,6 +111,11 @@
             web:
               image: {{ registry_url }}/web:latest
               build: !reset null
+              extra_hosts:
+                - "storage:{{ storage_private_ip }}"
+              depends_on: !override
+                api:
+                  condition: service_healthy
             api-migrate:
               image: {{ registry_url }}/api:latest
               build: !reset null
@@ -151,46 +127,18 @@
               build: !reset null
               environment:
                 SMART_API_DB_HOST: {{ db_private_ip }}
+                SMART_API_S3_ENDPOINT_URL: "http://{{ storage_private_ip }}:8334"
                 SMART_API_ALLOWED_ORIGINS: '["{{ app_url }}"]'
               depends_on: !override
                 api-migrate:
                   condition: service_completed_successfully
-                private-storage-init:
-                  condition: service_completed_successfully
-            private-storage-init:
-              image: {{ registry_url }}/api:latest
-            storage:
-              volumes: !override
-                - /mnt/storage-data/editorial:/data
-                - ./docker/storage:/opt/storage:ro
-            private-storage:
-              volumes: !override
-                - /mnt/storage-data/private:/data
-                - ./backend/docker:/opt/backend-storage:ro
 
-    # 7. SUBIR STORAGE, MIGRATIONS E APLICAÇÃO COMPLETA
-    - name: Subir armazenamentos SeaweedFS (editorial e privado)
-      community.docker.docker_compose_v2:
-        project_src: "{{ app_dir }}"
-        services:
-          - storage
-          - private-storage
-        state: present
-        recreate: always
-
+    # 6. MIGRATIONS E APLICAÇÃO STATELESS
     - name: Executar migrations Alembic na VM primária
       ansible.builtin.command:
         cmd: "docker compose run --rm --pull always api-migrate"
         chdir: "{{ app_dir }}"
       run_once: true
-
-    - name: Inicializar buckets do SeaweedFS nas VMs de aplicação
-      ansible.builtin.command:
-        cmd: "docker compose run --rm {{ item }}"
-        chdir: "{{ app_dir }}"
-      loop:
-        - private-storage-init
-        - storage-init
 
     - name: Subir Backend FastAPI e aguardar ficar saudavel
       block:

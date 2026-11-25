@@ -34,6 +34,7 @@ jobs:
           gcloud compute instances ${{ github.event.inputs.action }} \
             smart-construction-app-1 \
             smart-construction-app-2 \
+            smart-construction-storage \
             smart-construction-db \
             --zone=southamerica-east1-a \
             --project=projeto-mensal-4

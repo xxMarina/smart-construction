@@ -48,4 +48,5 @@ jobs:
         working-directory: ansible
         run: |
           ansible-playbook --syntax-check playbook-db.yml
+          ansible-playbook --syntax-check playbook-storage.yml
           ansible-playbook --syntax-check playbook-app.yml

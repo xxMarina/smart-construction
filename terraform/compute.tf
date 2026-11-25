@@ -33,13 +33,12 @@ resource "google_compute_disk_resource_policy_attachment" "db_backup" {
   zone = var.zone
 }
 
-data "google_compute_disk" "app_storage" {
-  count = 2
-  name  = "smart-construction-storage-data-${count.index + 1}"
-  zone  = var.zone
+data "google_compute_disk" "storage_data" {
+  name = "smart-construction-storage-data-1"
+  zone = var.zone
 }
 
-# --- 2 VMs DE APLICAÇÃO (Nginx, Next.js, FastAPI, SeaweedFS) ---
+# --- 2 VMs DE APLICAÇÃO STATELESS (Nginx, Next.js, FastAPI) ---
 resource "google_compute_instance" "app" {
   count        = 2
   name         = "smart-construction-app-${count.index + 1}"
@@ -52,11 +51,6 @@ resource "google_compute_instance" "app" {
       image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
       size  = 10
     }
-  }
-
-  attached_disk {
-    source      = data.google_compute_disk.app_storage[count.index].id
-    device_name = "storage-data"
   }
 
   network_interface {
@@ -109,5 +103,41 @@ resource "google_compute_instance" "db" {
     #!/bin/bash
     apt-get update && apt-get install -y docker.io docker-compose-v2
     systemctl enable --now docker
+  EOF
+}
+
+# --- 1 VM DEDICADA DE ARMAZENAMENTO (SeaweedFS editorial e privado) ---
+resource "google_compute_instance" "storage" {
+  name         = "smart-construction-storage"
+  machine_type = var.storage_machine_type
+  zone         = var.zone
+  tags         = ["smart-storage"]
+
+  boot_disk {
+    initialize_params {
+      image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
+      size  = 10
+    }
+  }
+
+  attached_disk {
+    source      = data.google_compute_disk.storage_data.id
+    device_name = "storage-data"
+  }
+
+  network_interface {
+    subnetwork = google_compute_subnetwork.subnet.id
+  }
+
+  service_account {
+    email  = data.google_service_account.app_sa.email
+    scopes = ["cloud-platform"]
+  }
+
+  metadata_startup_script = <<-EOF
+    #!/bin/bash
+    apt-get update && apt-get install -y docker.io docker-compose-v2
+    systemctl enable --now docker
+    gcloud auth configure-docker ${var.region}-docker.pkg.dev --quiet
   EOF
 }

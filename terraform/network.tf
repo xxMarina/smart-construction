@@ -53,6 +53,20 @@ resource "google_compute_firewall" "allow_postgres_internal" {
   target_tags = ["smart-db"]
 }
 
+# SeaweedFS (8333 editorial, 8334 privado) isolado: aceita conexões APENAS das VMs de aplicação
+resource "google_compute_firewall" "allow_storage_internal" {
+  name    = "sc-allow-storage-from-app"
+  network = google_compute_network.vpc.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["8333", "8334"]
+  }
+
+  source_tags = ["smart-app"]
+  target_tags = ["smart-storage"]
+}
+
 # SSH restrito ao túnel seguro IAP (Identity-Aware Proxy) para o Ansible
 resource "google_compute_firewall" "allow_iap_ssh" {
   name    = "sc-allow-iap-ssh"
@@ -64,5 +78,5 @@ resource "google_compute_firewall" "allow_iap_ssh" {
   }
 
   source_ranges = ["35.235.240.0/20"]
-  target_tags   = ["smart-app", "smart-db"]
+  target_tags   = ["smart-app", "smart-db", "smart-storage"]
 }

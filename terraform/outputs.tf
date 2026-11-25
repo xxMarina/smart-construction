@@ -9,3 +9,7 @@ output "artifact_registry_url" {
 output "db_private_ip" {
   value = google_compute_instance.db.network_interface[0].network_ip
 }
+
+output "storage_private_ip" {
+  value = google_compute_instance.storage.network_interface[0].network_ip
+}

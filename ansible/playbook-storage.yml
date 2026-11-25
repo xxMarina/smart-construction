@@ -1,0 +1,159 @@
+- name: Configurar Armazenamento Centralizado (SeaweedFS) na VM Storage
+  hosts: storage
+  become: true
+  vars:
+    app_dir: /opt/smart-construction
+    repo_url: "https://github.com/xxMarina/smart-construction.git"
+    registry_url: "southamerica-east1-docker.pkg.dev/projeto-mensal-4/smart-construction"
+
+  tasks:
+    # 1. PERSISTÊNCIA DO ARMAZENAMENTO (SeaweedFS)
+    - name: Formatar disco persistente storage-data (apenas se estiver vazio)
+      community.general.filesystem:
+        fstype: ext4
+        dev: /dev/disk/by-id/google-storage-data
+
+    - name: Garantir diretório de montagem /mnt/storage-data
+      ansible.builtin.file:
+        path: /mnt/storage-data
+        state: directory
+        mode: "0755"
+
+    - name: Montar volume persistente storage-data
+      ansible.posix.mount:
+        path: /mnt/storage-data
+        src: /dev/disk/by-id/google-storage-data
+        fstype: ext4
+        state: mounted
+
+    - name: Criar subdiretórios para buckets editorial e privado
+      ansible.builtin.file:
+        path: "/mnt/storage-data/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - editorial
+        - private
+
+    # 2. REPOSITÓRIO DA APLICAÇÃO
+    - name: Instalar git caso não esteja presente
+      ansible.builtin.apt:
+        name: git
+        state: present
+        update_cache: true
+
+    - name: Clonar ou atualizar repositório smart-construction
+      ansible.builtin.git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        version: main
+        force: true
+
+    # 3. AUTENTICAÇÃO NO GCP ARTIFACT REGISTRY
+    - name: Autenticar Docker no Artifact Registry
+      ansible.builtin.command: "gcloud auth configure-docker southamerica-east1-docker.pkg.dev --quiet"
+      changed_when: false
+
+    # 4. BUSCA DE SEGREDOS NO GCP SECRET MANAGER
+    - name: Buscar segredos S3 no Secret Manager
+      ansible.builtin.command: "gcloud secrets versions access latest --secret={{ item }}"
+      loop:
+        - sc-s3-access-key
+        - sc-s3-secret-key
+        - sc-admin-password
+      register: fetched_secrets
+      changed_when: false
+      no_log: true
+
+    - name: Mapear segredos em dicionário
+      ansible.builtin.set_fact:
+        secrets_map: "{{ secrets_map | default({}) | combine({item.item: item.stdout}) }}"
+      loop: "{{ fetched_secrets.results }}"
+      no_log: true
+
+    # 5. SINCRONIZAR CREDENCIAIS S3 COM SECRET MANAGER
+    - name: Garantir diretórios de segredos com permissão restrita
+      ansible.builtin.file:
+        path: "{{ app_dir }}/{{ item }}"
+        state: directory
+        mode: "0700"
+      loop:
+        - .secrets
+        - .secrets/backend
+        - .secrets/storage
+
+    - name: Remover s3-identities.json antigo para regenerar com chaves sincronizadas
+      ansible.builtin.file:
+        path: "{{ app_dir }}/.secrets/backend/s3-identities.json"
+        state: absent
+
+    - name: Gravar chaves S3 da API antes do backend-setup
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/.secrets/backend/{{ item.file }}"
+        content: "{{ secrets_map[item.secret] }}\n"
+        mode: "0444"
+      loop:
+        - { file: "s3-api-access-key", secret: "sc-s3-access-key" }
+        - { file: "s3-api-secret-key", secret: "sc-s3-secret-key" }
+      no_log: true
+
+    - name: Executar geradores nativos de secrets (backend-setup e storage-setup)
+      ansible.builtin.command:
+        cmd: "docker compose --profile tools run --rm {{ item }}"
+        chdir: "{{ app_dir }}"
+      loop:
+        - backend-setup
+        - storage-setup
+
+    - name: Sincronizar chaves S3 do storage editorial com o Secret Manager
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/.secrets/storage/{{ item.file }}"
+        content: "{{ secrets_map[item.secret] }}"
+        mode: "0444"
+      loop:
+        - { file: "access-key", secret: "sc-s3-access-key" }
+        - { file: "secret-key", secret: "sc-s3-secret-key" }
+        - { file: "admin-password", secret: "sc-admin-password" }
+      no_log: true
+
+    # 6. OVERRIDE PARA EXPOR SEAWEEDFS NA REDE PRIVADA DA VPC
+    - name: Gerar docker-compose.override.yml na VM de storage
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/docker-compose.override.yml"
+        mode: "0644"
+        content: |
+          services:
+            storage:
+              ports: !override
+                - "0.0.0.0:8333:8333"
+              volumes: !override
+                - /mnt/storage-data/editorial:/data
+                - ./docker/storage:/opt/storage:ro
+            private-storage:
+              ports: !override
+                - "0.0.0.0:8334:8333"
+              volumes: !override
+                - /mnt/storage-data/private:/data
+                - ./backend/docker:/opt/backend-storage:ro
+            private-storage-init:
+              image: {{ registry_url }}/api:latest
+
+    # 7. SUBIR SEAWEEDFS E INICIALIZAR BUCKETS
+    - name: Subir armazenamentos SeaweedFS (editorial e privado)
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        services:
+          - storage
+          - private-storage
+        state: present
+        recreate: always
+
+    - name: Inicializar bucket privado do SeaweedFS
+      ansible.builtin.command:
+        cmd: "docker compose run --rm --pull always private-storage-init"
+        chdir: "{{ app_dir }}"
+
+    - name: Inicializar bucket editorial do SeaweedFS
+      ansible.builtin.command:
+        cmd: "docker compose run --rm storage-init"
+        chdir: "{{ app_dir }}"
