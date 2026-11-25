@@ -104,3 +104,83 @@ jobs:
           name: postgres-backup-test-${{ github.run_id }}
           path: ${{ steps.dump.outputs.file }}
           retention-days: 30
+
+  storage-backup-restore-test:
+    name: Teste Isolado de Backup e Restauração (SeaweedFS Imagens)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Autenticar na GCP via OIDC (Workload Identity)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configurar Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Gerar arquivo de backup das imagens na VM storage via IAP
+        id: storage_dump
+        run: |
+          ARCHIVE_FILE="sc-storage-backup-${{ github.run_id }}.tar.gz"
+          gcloud compute ssh smart-construction-storage \
+            --zone="${{ env.ZONE }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --tunnel-through-iap \
+            --quiet \
+            --command="sudo tar --warning=no-file-changed -czf /tmp/sc_storage_backup.tar.gz -C /mnt/storage-data editorial private && test -s /tmp/sc_storage_backup.tar.gz"
+
+          ORIG_FILES=$(gcloud compute ssh smart-construction-storage \
+            --zone="${{ env.ZONE }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --tunnel-through-iap \
+            --quiet \
+            --command="sudo find /mnt/storage-data/editorial /mnt/storage-data/private -type f | wc -l" | tr -d '[:space:]')
+
+          gcloud compute scp \
+            --zone="${{ env.ZONE }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --tunnel-through-iap \
+            --quiet \
+            "smart-construction-storage:/tmp/sc_storage_backup.tar.gz" "./${ARCHIVE_FILE}"
+
+          gcloud compute ssh smart-construction-storage \
+            --zone="${{ env.ZONE }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --tunnel-through-iap \
+            --quiet \
+            --command="sudo rm -f /tmp/sc_storage_backup.tar.gz"
+
+          echo "file=${ARCHIVE_FILE}" >> "$GITHUB_OUTPUT"
+          echo "orig_files=${ORIG_FILES}" >> "$GITHUB_OUTPUT"
+
+      - name: Restaurar e validar em SeaweedFS isolado no runner
+        run: |
+          ARCHIVE_FILE="${{ steps.storage_dump.outputs.file }}"
+          mkdir -p "$PWD/restore-storage"
+          tar -xzf "./${ARCHIVE_FILE}" -C "$PWD/restore-storage"
+
+          REST_FILES=$(find "$PWD/restore-storage/editorial" "$PWD/restore-storage/private" -type f | wc -l | tr -d '[:space:]')
+          echo "Arquivos no storage (principal): ${{ steps.storage_dump.outputs.orig_files }} | restaurado: $REST_FILES"
+          test "${{ steps.storage_dump.outputs.orig_files }}" = "$REST_FILES" && test "$REST_FILES" -gt 0
+
+          docker run -d --name seaweed-restore-test \
+            -v "$PWD/restore-storage/editorial:/data" \
+            chrislusf/seaweedfs:4.48 \
+            mini -dir=/data -ip.bind=0.0.0.0 -master.port=9333 -volume.port=9340 -filer.port=8888 -s3.port=8333 -master.telemetry=false
+
+          for i in $(seq 1 30); do
+            if docker exec seaweed-restore-test wget -q -O /dev/null http://127.0.0.1:9333/cluster/status 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          docker exec seaweed-restore-test wget -q -O - http://127.0.0.1:9333/cluster/status
+          docker rm -f seaweed-restore-test
+
+      - name: Salvar arquivo de backup das imagens como Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-backup-test-${{ github.run_id }}
+          path: ${{ steps.storage_dump.outputs.file }}
+          retention-days: 30

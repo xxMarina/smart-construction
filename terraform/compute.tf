@@ -38,6 +38,12 @@ data "google_compute_disk" "storage_data" {
   zone = var.zone
 }
 
+resource "google_compute_disk_resource_policy_attachment" "storage_backup" {
+  name = google_compute_resource_policy.daily_backup.name
+  disk = data.google_compute_disk.storage_data.name
+  zone = var.zone
+}
+
 # --- 2 VMs DE APLICAÇÃO STATELESS (Nginx, Next.js, FastAPI) ---
 resource "google_compute_instance" "app" {
   count        = 2
