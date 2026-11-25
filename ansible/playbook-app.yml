@@ -53,6 +53,7 @@
       loop:
         - migration-password
         - api-password
+        - s3-identities.json
 
     - name: Executar geradores nativos de secrets do projeto (backend-setup e storage-setup)
       ansible.builtin.command:
