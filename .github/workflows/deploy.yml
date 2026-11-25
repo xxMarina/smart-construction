@@ -209,9 +209,59 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING: "False"
         run: ansible-playbook playbook-db.yml
 
+  ansible-storage:
+    name: 3b. Ansible Storage
+    needs: [terraform-apply, build-api]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Autenticar na GCP via OIDC
+        if: github.event_name != 'pull_request'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configurar Google Cloud SDK
+        if: github.event_name != 'pull_request'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cache de pip e coleções Ansible
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.ansible/collections
+          key: ${{ runner.os }}-ansible-v1
+          restore-keys: |
+            ${{ runner.os }}-ansible-
+
+      - name: Instalar Ansible e coleções GCP/Docker
+        run: |
+          pip install --quiet ansible google-auth requests
+          ansible-galaxy collection install google.cloud community.docker community.general ansible.posix
+
+      - name: Validar sintaxe do Playbook Storage
+        working-directory: ansible
+        run: ansible-playbook --syntax-check playbook-storage.yml
+
+      - name: Preparar chave SSH para IAP (Storage)
+        if: github.event_name != 'pull_request'
+        run: gcloud compute ssh smart-construction-storage --zone=southamerica-east1-a --project=${{ env.PROJECT_ID }} --tunnel-through-iap --command="true" --quiet
+
+      - name: Executar Playbook Storage
+        if: github.event_name != 'pull_request'
+        working-directory: ansible
+        env:
+          GCP_AUTH_KIND: application
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: ansible-playbook playbook-storage.yml
+
   ansible-app:
     name: 4. Ansible App
-    needs: [terraform-apply, ansible-db, build-web, build-api]
+    needs: [terraform-apply, ansible-db, ansible-storage, build-web, build-api]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
