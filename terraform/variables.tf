@@ -27,3 +27,9 @@ variable "db_machine_type" {
   type        = string
   default     = "e2-small"
 }
+
+variable "storage_machine_type" {
+  description = "VM dedicada para SeaweedFS (editorial e privado)"
+  type        = string
+  default     = "e2-small"
+}
