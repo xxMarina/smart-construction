@@ -7,8 +7,23 @@
     db_private_ip: "{{ hostvars[groups['db'][0]].networkInterfaces[0].networkIP }}"
     storage_private_ip: "{{ hostvars[groups['storage'][0]].networkInterfaces[0].networkIP }}"
     registry_url: "southamerica-east1-docker.pkg.dev/projeto-mensal-4/smart-construction"
+    update_os: false
+    extra_packages: ""
 
   tasks:
+    - name: Atualizar pacotes do sistema operacional (quando update_os=true)
+      ansible.builtin.apt:
+        upgrade: safe
+        update_cache: true
+      when: update_os | bool
+
+    - name: Instalar pacotes adicionais informados na pipeline
+      ansible.builtin.apt:
+        name: "{{ extra_packages.split(',') | map('trim') | reject('equalto', '') | list }}"
+        state: present
+        update_cache: true
+      when: extra_packages | trim | length > 0
+
     # 1. REPOSITÓRIO DA APLICAÇÃO
     - name: Instalar git caso não esteja presente
       ansible.builtin.apt:
