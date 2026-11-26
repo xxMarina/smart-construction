@@ -7,9 +7,10 @@ Os workflows em `.github/workflows/` automatizam validação, build, deploy, tes
 - **`ci.yaml`:** executa lint, typecheck, testes unitários (frontend e backend com Ruff, mypy e pytest).
 - **`pr-check.yml`:** valida `terraform fmt`, `terraform validate`, `ansible-playbook --syntax-check` (incluindo `playbook-storage.yml`) e checagens de Pull Request.
 - **`deploy.yml`:**
-  - Possui `concurrency` configurada (`cancel-in-progress` ativo apenas para `pull_request`).
+  - Possui `concurrency` configurada (`cancel-in-progress` ativo apenas para `pull_request`), evitando conflitos de *state lock* na `main`.
+  - Suporta execução manual via `workflow_dispatch` com parâmetros configuráveis: `environment`, `instance_type` (`e2-small`/`e2-medium`/`e2-micro`, repassado ao Terraform com `allow_stopping_for_update = true`), `docker_tag`, `update_os` (`apt upgrade`) e `extra_packages`.
   - Constrói e publica imagens no Artifact Registry (`build-web` com `NEXT_PUBLIC_ASSETS_BASE_URL=/assets`, `ASSETS_PROXY_URL=http://storage:8333/smart-assets` e `API_PROXY_URL=http://api:8000`).
-  - Executa Terraform e playbooks Ansible em ordem: `playbook-db.yml`, `playbook-storage.yml` e `playbook-app.yml`.
+  - Executa Terraform e playbooks Ansible em ordem: `playbook-db.yml`, `playbook-storage.yml` e `playbook-app.yml` (que gera o `docker-compose.override.yml` de produção).
   - Finaliza com o job **`5. Smoke Test HTTPS`** validando a resposta pública em `https://<IP_LB>.sslip.io` (ex.: `https://34.107.193.113.sslip.io`).
 - **`backup-test.yml`:** executa testes isolados de backup e restauração via IAP SCP em containers temporários para:
   - **PostgreSQL** (`pg_dump` / `pg_restore` isolado).
