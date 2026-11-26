@@ -5,7 +5,7 @@ resource "google_compute_global_address" "lb_ip" {
 resource "google_compute_instance_group" "app_group" {
   name      = "smart-construction-app-group"
   zone      = var.zone
-  instances = google_compute_instance.app[*].id
+  instances = values(google_compute_instance.app)[*].id
 
   named_port {
     name = "http"
