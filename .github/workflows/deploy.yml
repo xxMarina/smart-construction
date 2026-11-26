@@ -8,6 +8,40 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Ambiente de destino"
+        required: true
+        type: choice
+        options:
+          - prod
+          - homolog
+          - dev
+        default: prod
+      instance_type:
+        description: "Tipo das VMs de aplicação (Terraform app_machine_type)"
+        required: true
+        type: choice
+        options:
+          - e2-small
+          - e2-medium
+          - e2-micro
+        default: e2-small
+      docker_tag:
+        description: "Tag da imagem Docker (ex: latest ou SHA)"
+        required: true
+        type: string
+        default: latest
+      update_os:
+        description: "Aplicar atualizações do SO via Ansible (apt upgrade)"
+        required: true
+        type: boolean
+        default: false
+      extra_packages:
+        description: "Pacotes extras separados por vírgula (ex: htop,jq)"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -142,7 +176,8 @@ jobs:
         run: |
           terraform init -input=false
           set +e
-          terraform plan -detailed-exitcode -input=false -out=tfplan
+          terraform plan -detailed-exitcode -input=false -out=tfplan \
+            -var="app_machine_type=${{ inputs.instance_type || 'e2-small' }}"
           EXIT_CODE=$?
           set -e
           echo "exitcode=$EXIT_CODE" >> "$GITHUB_OUTPUT"
@@ -311,7 +346,13 @@ jobs:
         env:
           GCP_AUTH_KIND: application
           ANSIBLE_HOST_KEY_CHECKING: "False"
-        run: ansible-playbook playbook-app.yml -e "app_url=${{ needs.terraform-apply.outputs.https_url }}"
+        run: |
+          ansible-playbook playbook-app.yml \
+            -e "app_url=${{ needs.terraform-apply.outputs.https_url }}" \
+            -e "deploy_env=${{ inputs.environment || 'prod' }}" \
+            -e "docker_tag=${{ inputs.docker_tag || 'latest' }}" \
+            -e "update_os=${{ inputs.update_os || false }}" \
+            -e "extra_packages=${{ inputs.extra_packages || '' }}"
 
   smoke-test-https:
     name: 5. Smoke Test HTTPS

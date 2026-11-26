@@ -46,11 +46,12 @@ resource "google_compute_disk_resource_policy_attachment" "storage_backup" {
 
 # --- 2 VMs DE APLICAÇÃO STATELESS (Nginx, Next.js, FastAPI) ---
 resource "google_compute_instance" "app" {
-  count        = 2
-  name         = "smart-construction-app-${count.index + 1}"
-  machine_type = var.app_machine_type
-  zone         = var.zone
-  tags         = ["smart-app"]
+  count                     = 2
+  name                      = "smart-construction-app-${count.index + 1}"
+  machine_type              = var.app_machine_type
+  zone                      = var.zone
+  allow_stopping_for_update = true
+  tags                      = ["smart-app"]
 
   boot_disk {
     initialize_params {
