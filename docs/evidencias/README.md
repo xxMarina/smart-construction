@@ -13,3 +13,5 @@ Prints organizados em ordem sequencial dos cenários de teste do **PM-04 | Proje
 9. **`09-snapshot-antes.png`** — Estado antes da janela automática de snapshot (`Listed 0 items`).
 10. **`10-snapshot-depois.png`** — Snapshots automáticos criados pela política `daily_backup` (`READY`).
 11. **`11-snapshot.png`** — Detalhe dos snapshots automáticos na GCP.
+12. **`12-instalar-pacotes-via-asnible-terraform.png`** — Cenário 2: execução do `deploy.yml` com `update_os=true` e `extra_packages=htop,jq` no Ansible.
+13. **`13-print-dos-pacotes-instalados.png`** — Verificação na VM via IAP SSH confirmando `htop` e `jq` instalados.
