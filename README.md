@@ -165,3 +165,13 @@ docker compose exec -T -e SMOKE_BASE_URL=http://gateway web node /app/scripts/sm
 ```
 
 O resultado esperado contém `"result":"PASS"`.
+
+## Infraestrutura em Nuvem (GCP — Terraform, Ansible e CI/CD)
+
+Documentação completa da infraestrutura provisionada na Google Cloud Platform (`southamerica-east1`):
+
+- [Arquitetura e Proposta Técnica](docs/01-arquitetura-e-proposta.md)
+- [Operação e Pipelines CI/CD](docs/02-operacao-e-pipelines.md)
+- [FinOps e Estimativa de Custos GCP](docs/03-finops-e-custos-gcp.md)
+- [Architecture Decision Records (ADRs)](docs/adr/README.md)
+- [Evidências de Execução](docs/evidencias/README.md)
